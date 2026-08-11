@@ -14,6 +14,7 @@ monitoring up to four VNC servers at once.
 - Add, edit, connect, and delete VNC targets without restarting the app.
 - Monitor up to four targets simultaneously.
 - Switch between grid, column, and row layouts.
+- Keep a standard arrow visible when an HMI hides its remote cursor.
 - Restore targets, layout, and open screens from browser storage.
 - Keep VNC credentials in memory only.
 

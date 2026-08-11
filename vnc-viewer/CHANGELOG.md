@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.1
+
+- Always show the browser's standard arrow cursor over VNC screens, including
+  when an HMI server sends a transparent or hidden cursor.
+
 ## 1.0.0
 
 - Add a persistent target list with add, edit, connect, and delete actions.
