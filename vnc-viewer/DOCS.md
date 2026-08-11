@@ -1,19 +1,21 @@
-## Config
+## Usage
 
-Example config:
+Open the add-on from the Home Assistant sidebar, then press **+** to add a
+VNC target. Clicking a target opens a menu with actions to connect, edit, or
+delete it.
 
-```yaml
-vnc_server_host: 192.168.0.23
-```
+Up to four targets can be open at the same time. Use the compact controls at
+the bottom of the dashboard to switch between grid, column, and row layouts.
+Changing a target takes effect immediately and does not require restarting the
+add-on.
 
-### `vnc_server_host`
+Targets, the selected layout, and the set of open screens are stored in the
+browser and restored the next time the dashboard is opened. VNC credentials
+are deliberately kept only for the current page and are never persisted.
 
-The hostname or ip address of the VNC server the addon should connect to.
+## Configuration
 
-### `vnc_server_port` (Optional)
-
-The remote port of the VNC server. (Default: `5900`)
-
-### `vnc_server_password` (Optional)
-
-The password of the the VNC server. When not set and the connection requires a password, it is asked at connection time.
+The add-on no longer requires a fixed server in its YAML configuration. All
+targets are managed from the dashboard. On an upgrade, an existing
+`vnc_server_host` and `vnc_server_port` are imported as the initial target for
+backward compatibility. The old password is not copied into browser storage.
