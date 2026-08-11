@@ -1,31 +1,18 @@
 #!/command/with-contenv bashio
 set -e
 
-bashio::log.info 'Set some defaults'
-sed -i "/UI.initSetting('show_dot'/ s/false/true/; /UI.initSetting('resize'/ s/off/scale/" /noVNC/app/ui.js
+bashio::log.info 'Start multi-target noVNC dashboard'
+export PYTHONPATH="/opt/vnc-viewer${PYTHONPATH:+:${PYTHONPATH}}"
 
-bashio::log.info 'Prepare noVNC for Home Assistant ingress'
-host_port=$(bashio::core.port)
-ingress_url=$(bashio::addon.ingress_entry)
-
-sed -i "/UI.initSetting/ s@'websockify'@'${ingress_url:1}/websockify'@" /noVNC/app/ui.js
-
-if bashio::config.has_value 'vnc_server_password'; then
-    bashio::log.info 'Inject vnc connection password'
-    password=$(bashio::config 'vnc_server_password')
-    sed -i "s/WebUtil.getConfigVar('password');/'${password}';/" /noVNC/app/ui.js
+printf '%s\n' 'window.VNC_VIEWER_LEGACY_TARGET = null;' > /noVNC/legacy-config.js
+if bashio::config.has_value 'vnc_server_host'; then
+    export VNC_VIEWER_LEGACY_HOST="$(bashio::config 'vnc_server_host')"
+    export VNC_VIEWER_LEGACY_PORT="$(bashio::config 'vnc_server_port' '5900')"
+    python3 -c 'import json, os; print("window.VNC_VIEWER_LEGACY_TARGET = " + json.dumps({"host": os.environ["VNC_VIEWER_LEGACY_HOST"], "port": int(os.environ["VNC_VIEWER_LEGACY_PORT"])}) + ";")' > /noVNC/legacy-config.js
 fi
 
-server_host=$(bashio::config 'vnc_server_host')
-server_port=5900
-if bashio::config.has_value 'vnc_server_port'; then
-    server_port=$(bashio::config 'vnc_server_port')
-fi
-
-server="${server_host}:${server_port}"
-
-
-bashio::log.info 'Start noVNC'
-bashio::log.info "Connecting to VNC $server"
-# shellcheck disable=SC2086
-/noVNC/utils/novnc_proxy --listen 6080 --vnc $server
+exec /usr/local/bin/websockify \
+    --web /noVNC \
+    --token-plugin dynamic_targets.DynamicTargets \
+    --token-source dashboard \
+    6080

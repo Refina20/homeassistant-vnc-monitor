@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#111827">
+    <title>VNC Monitor</title>
+    <link rel="stylesheet" href="dashboard.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="sidebar" aria-label="VNC targets">
+        <div class="sidebar-heading">
+          <div>
+            <span class="eyebrow">VNC MONITOR</span>
+            <h1>目標</h1>
+          </div>
+          <button id="add-target" class="icon-button primary" type="button" title="新增目標" aria-label="新增目標">+</button>
+        </div>
+        <div id="target-list" class="target-list"></div>
+        <p id="empty-targets" class="empty-copy">尚未新增目標。按 + 開始。</p>
+      </aside>
+
+      <section class="workspace">
+        <div id="monitor-grid" class="monitor-grid layout-grid" aria-live="polite"></div>
+        <div id="empty-monitors" class="empty-state">
+          <div class="empty-icon" aria-hidden="true">▣</div>
+          <h2>選擇一個目標開始監看</h2>
+          <p>最多可同時開啟 4 個 VNC 畫面。</p>
+        </div>
+        <footer class="control-bar">
+          <span id="screen-count">0 / 4 畫面</span>
+          <div class="layout-controls" role="group" aria-label="排列方式">
+            <span>排列</span>
+            <button type="button" data-layout="grid" class="active">田</button>
+            <button type="button" data-layout="columns">▥</button>
+            <button type="button" data-layout="rows">目</button>
+          </div>
+          <button id="disconnect-all" class="text-button" type="button">全部中斷</button>
+        </footer>
+      </section>
+    </main>
+
+    <div id="target-menu" class="context-menu" hidden>
+      <button type="button" data-action="connect">連接</button>
+      <button type="button" data-action="edit">修改設定</button>
+      <button type="button" data-action="delete" class="danger">刪除</button>
+    </div>
+
+    <dialog id="target-dialog">
+      <form id="target-form" method="dialog">
+        <div class="dialog-heading">
+          <h2 id="target-dialog-title">新增目標</h2>
+          <button type="button" class="dialog-close" aria-label="關閉">×</button>
+        </div>
+        <input id="target-id" type="hidden">
+        <label>名稱<input id="target-name" maxlength="40" required placeholder="例如：客廳主機"></label>
+        <div class="form-row">
+          <label>主機 / IP<input id="target-host" maxlength="253" required placeholder="192.168.1.20"></label>
+          <label class="port-field">連接埠<input id="target-port" type="number" min="1" max="65535" value="5900" required></label>
+        </div>
+        <label class="checkbox-row"><input id="target-view-only" type="checkbox"> 僅檢視（不傳送鍵盤與滑鼠）</label>
+        <label class="checkbox-row"><input id="target-scale" type="checkbox" checked> 縮放至視窗大小</label>
+        <p id="target-form-error" class="form-error" role="alert"></p>
+        <div class="dialog-actions">
+          <button type="button" class="secondary dialog-close">取消</button>
+          <button type="submit" class="primary">儲存</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="credentials-dialog">
+      <form id="credentials-form" method="dialog">
+        <div class="dialog-heading">
+          <h2>VNC 驗證</h2>
+          <button type="button" class="credentials-cancel" aria-label="關閉">×</button>
+        </div>
+        <p id="credentials-message"></p>
+        <label>使用者名稱<input id="credentials-username" autocomplete="username"></label>
+        <label>密碼<input id="credentials-password" type="password" autocomplete="current-password"></label>
+        <p class="privacy-note">認證資料只用於本次頁面，不會儲存。</p>
+        <div class="dialog-actions">
+          <button type="button" class="secondary credentials-cancel">取消</button>
+          <button type="submit" class="primary">送出</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="legacy-config.js"></script>
+    <script type="module" src="dashboard.js"></script>
+  </body>
+</html>
