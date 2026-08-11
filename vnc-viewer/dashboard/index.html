@@ -9,13 +9,24 @@
   </head>
   <body>
     <main class="app-shell">
-      <aside class="sidebar" aria-label="VNC targets">
+      <aside class="sidebar" aria-label="VNC targets and profiles">
         <div class="sidebar-heading">
           <div>
             <span class="eyebrow">VNC MONITOR</span>
-            <h1>目標</h1>
+            <h1>監看</h1>
           </div>
-          <button id="add-target" class="icon-button primary" type="button" title="新增目標" aria-label="新增目標">+</button>
+        </div>
+
+        <div class="section-heading">
+          <span>監看組合</span>
+          <button id="add-profile" class="small-icon-button" type="button" title="儲存目前組合" aria-label="儲存目前組合">+</button>
+        </div>
+        <div id="profile-list" class="profile-list"></div>
+        <p id="empty-profiles" class="empty-copy compact">開啟畫面後按 + 儲存組合。</p>
+
+        <div class="section-heading targets-heading">
+          <span>目標清單</span>
+          <button id="add-target" class="small-icon-button primary" type="button" title="新增目標" aria-label="新增目標">+</button>
         </div>
         <div id="target-list" class="target-list"></div>
         <p id="empty-targets" class="empty-copy">尚未新增目標。按 + 開始。</p>
@@ -36,6 +47,7 @@
             <button type="button" data-layout="columns">▥</button>
             <button type="button" data-layout="rows">目</button>
           </div>
+          <button id="forget-credentials" class="text-button" type="button">清除帳密</button>
           <button id="disconnect-all" class="text-button" type="button">全部中斷</button>
         </footer>
       </section>
@@ -47,11 +59,18 @@
       <button type="button" data-action="delete" class="danger">刪除</button>
     </div>
 
+    <div id="profile-menu" class="context-menu" hidden>
+      <button type="button" data-action="apply">套用組合</button>
+      <button type="button" data-action="update">以目前畫面更新</button>
+      <button type="button" data-action="rename">重新命名</button>
+      <button type="button" data-action="delete" class="danger">刪除</button>
+    </div>
+
     <dialog id="target-dialog">
       <form id="target-form" method="dialog">
         <div class="dialog-heading">
           <h2 id="target-dialog-title">新增目標</h2>
-          <button type="button" class="dialog-close" aria-label="關閉">×</button>
+          <button type="button" class="target-dialog-close" aria-label="關閉">×</button>
         </div>
         <input id="target-id" type="hidden">
         <label>名稱<input id="target-name" maxlength="40" required placeholder="例如：客廳主機"></label>
@@ -63,7 +82,24 @@
         <label class="checkbox-row"><input id="target-scale" type="checkbox" checked> 縮放至視窗大小</label>
         <p id="target-form-error" class="form-error" role="alert"></p>
         <div class="dialog-actions">
-          <button type="button" class="secondary dialog-close">取消</button>
+          <button type="button" class="secondary target-dialog-close">取消</button>
+          <button type="submit" class="primary">儲存</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="profile-dialog">
+      <form id="profile-form" method="dialog">
+        <div class="dialog-heading">
+          <h2 id="profile-dialog-title">儲存監看組合</h2>
+          <button type="button" class="profile-dialog-close" aria-label="關閉">×</button>
+        </div>
+        <input id="profile-id" type="hidden">
+        <label>組合名稱<input id="profile-name" maxlength="40" required placeholder="例如：產線 A"></label>
+        <p id="profile-summary" class="profile-summary"></p>
+        <p id="profile-form-error" class="form-error" role="alert"></p>
+        <div class="dialog-actions">
+          <button type="button" class="secondary profile-dialog-close">取消</button>
           <button type="submit" class="primary">儲存</button>
         </div>
       </form>
@@ -78,7 +114,8 @@
         <p id="credentials-message"></p>
         <label>使用者名稱<input id="credentials-username" autocomplete="username"></label>
         <label>密碼<input id="credentials-password" type="password" autocomplete="current-password"></label>
-        <p class="privacy-note">認證資料只用於本次頁面，不會儲存。</p>
+        <label class="checkbox-row"><input id="remember-credentials" type="checkbox"> 記住並套用至所有目標</label>
+        <p class="privacy-note">勾選後，帳密會明文保存在這個瀏覽器。請只在受信任的裝置使用。</p>
         <div class="dialog-actions">
           <button type="button" class="secondary credentials-cancel">取消</button>
           <button type="submit" class="primary">送出</button>

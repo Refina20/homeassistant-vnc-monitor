@@ -13,10 +13,11 @@ monitoring up to four VNC servers at once.
 
 - Add, edit, connect, and delete VNC targets without restarting the app.
 - Monitor up to four targets simultaneously.
+- Save reusable profiles for different groups of up to four screens.
 - Switch between grid, column, and row layouts.
 - Keep a standard arrow visible when an HMI hides its remote cursor.
-- Restore targets, layout, and open screens from browser storage.
-- Keep VNC credentials in memory only.
+- Restore targets, profiles, layout, and open screens from browser storage.
+- Optionally remember and reuse one shared credential set in this browser.
 
 ## Installation
 
@@ -27,6 +28,17 @@ https://github.com/Refina20/homeassistant-vnc-monitor
 ```
 
 Install **VNC Viewer**, start it, and enable **Show in sidebar**.
+
+Open the screens you want, choose a layout, then use the **+** beside
+**Monitor profiles** to save the combination. Selecting a profile disconnects
+the current screens before opening the saved set, so inactive profiles do not
+continue consuming VNC connections.
+
+When a server requests authentication, **Remember and use for all targets**
+can reuse the same credentials for the other screens. This opt-in stores the
+credentials as plain text in this browser's local storage; use it only on a
+trusted Home Assistant device. The saved value can be removed with **Clear
+credentials**.
 
 ## Credits
 
