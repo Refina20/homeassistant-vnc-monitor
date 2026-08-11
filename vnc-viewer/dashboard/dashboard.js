@@ -2,26 +2,36 @@ import RFB from './core/rfb.js';
 
 const STORAGE_KEY = 'vnc-monitor-state-v1';
 const MAX_SCREENS = 4;
+const MAX_PROFILES = 50;
 const HOST_PATTERN = /^[A-Za-z0-9_.:-]+$/;
+const LAYOUTS = ['grid', 'columns', 'rows'];
 
 const elements = {
   targetList: document.querySelector('#target-list'),
   emptyTargets: document.querySelector('#empty-targets'),
+  profileList: document.querySelector('#profile-list'),
+  emptyProfiles: document.querySelector('#empty-profiles'),
   monitorGrid: document.querySelector('#monitor-grid'),
   emptyMonitors: document.querySelector('#empty-monitors'),
   screenCount: document.querySelector('#screen-count'),
   targetMenu: document.querySelector('#target-menu'),
+  profileMenu: document.querySelector('#profile-menu'),
   targetDialog: document.querySelector('#target-dialog'),
   targetForm: document.querySelector('#target-form'),
   targetError: document.querySelector('#target-form-error'),
+  profileDialog: document.querySelector('#profile-dialog'),
+  profileForm: document.querySelector('#profile-form'),
+  profileError: document.querySelector('#profile-form-error'),
   credentialsDialog: document.querySelector('#credentials-dialog'),
   credentialsForm: document.querySelector('#credentials-form'),
   toast: document.querySelector('#toast'),
 };
 
 let state = loadState();
-let sessions = new Map();
+const sessions = new Map();
+const credentialQueue = [];
 let menuTargetId = null;
+let menuProfileId = null;
 let credentialSessionId = null;
 let toastTimer = null;
 
@@ -39,7 +49,7 @@ function defaultState() {
         scaleViewport: true,
       }]
     : [];
-  return { targets, activeTargetIds: [], layout: 'grid' };
+  return { targets, profiles: [], sharedCredentials: null, activeTargetIds: [], layout: 'grid' };
 }
 
 function loadState() {
@@ -48,12 +58,28 @@ function loadState() {
     if (!stored || !Array.isArray(stored.targets)) return defaultState();
     const targets = stored.targets.filter(isValidStoredTarget).slice(0, 100);
     const knownIds = new Set(targets.map((target) => target.id));
+    const profiles = Array.isArray(stored.profiles)
+      ? stored.profiles
+          .filter((profile) => profile && typeof profile.id === 'string' && typeof profile.name === 'string')
+          .map((profile) => ({
+            id: profile.id,
+            name: profile.name,
+            targetIds: Array.isArray(profile.targetIds)
+              ? [...new Set(profile.targetIds)].filter((id) => knownIds.has(id)).slice(0, MAX_SCREENS)
+              : [],
+            layout: LAYOUTS.includes(profile.layout) ? profile.layout : 'grid',
+          }))
+          .filter((profile) => profile.targetIds.length > 0)
+          .slice(0, MAX_PROFILES)
+      : [];
     return {
       targets,
+      profiles,
+      sharedCredentials: isValidCredentials(stored.sharedCredentials) ? stored.sharedCredentials : null,
       activeTargetIds: Array.isArray(stored.activeTargetIds)
         ? [...new Set(stored.activeTargetIds)].filter((id) => knownIds.has(id)).slice(0, MAX_SCREENS)
         : [],
-      layout: ['grid', 'columns', 'rows'].includes(stored.layout) ? stored.layout : 'grid',
+      layout: LAYOUTS.includes(stored.layout) ? stored.layout : 'grid',
     };
   } catch (error) {
     console.warn('Ignoring invalid saved dashboard state', error);
@@ -67,6 +93,10 @@ function isValidStoredTarget(target) {
     && target.port >= 1 && target.port <= 65535;
 }
 
+function isValidCredentials(credentials) {
+  return credentials && typeof credentials.username === 'string' && typeof credentials.password === 'string';
+}
+
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
@@ -78,6 +108,10 @@ function isValidHost(host) {
 
 function targetById(id) {
   return state.targets.find((target) => target.id === id);
+}
+
+function profileById(id) {
+  return state.profiles.find((profile) => profile.id === id);
 }
 
 function renderTargets() {
@@ -102,27 +136,74 @@ function renderTargets() {
   }
 }
 
+function renderProfiles() {
+  elements.profileList.replaceChildren();
+  elements.emptyProfiles.hidden = state.profiles.length > 0;
+  for (const profile of state.profiles) {
+    const item = document.createElement('div');
+    item.className = `profile-item${profileIsActive(profile) ? ' active' : ''}`;
+    item.dataset.profileId = profile.id;
+    item.innerHTML = `
+      <button type="button" class="profile-apply">
+        <span class="profile-name"></span>
+        <span class="profile-meta"></span>
+      </button>
+      <button type="button" class="profile-more" aria-label="組合選單">⋮</button>`;
+    item.querySelector('.profile-name').textContent = profile.name;
+    item.querySelector('.profile-meta').textContent = `${profile.targetIds.length} 畫面 · ${layoutLabel(profile.layout)}`;
+    item.querySelector('.profile-apply').addEventListener('click', () => applyProfile(profile.id));
+    item.querySelector('.profile-more').addEventListener('click', (event) => openProfileMenu(event, profile.id));
+    elements.profileList.append(item);
+  }
+}
+
+function profileIsActive(profile) {
+  const active = [...sessions.keys()].sort();
+  const saved = [...profile.targetIds].sort();
+  return state.layout === profile.layout && active.length === saved.length
+    && active.every((id, index) => id === saved[index]);
+}
+
+function layoutLabel(layout) {
+  return { grid: '田字', columns: '橫排', rows: '直排' }[layout] ?? '田字';
+}
+
 function formatAddress(target) {
   const host = target.host.includes(':') ? `[${target.host}]` : target.host;
   return `${host}:${target.port}`;
 }
 
+function positionMenu(menu, anchor, width = 138) {
+  const rect = anchor.getBoundingClientRect();
+  menu.hidden = false;
+  const menuHeight = menu.offsetHeight;
+  menu.style.left = `${Math.min(rect.right - 4, window.innerWidth - width - 6)}px`;
+  menu.style.top = `${Math.min(rect.top + 8, window.innerHeight - menuHeight - 8)}px`;
+}
+
 function openTargetMenu(event, targetId) {
-  closeTargetMenu();
+  closeMenus();
   menuTargetId = targetId;
   event.currentTarget.classList.add('menu-open');
-  const rect = event.currentTarget.getBoundingClientRect();
-  elements.targetMenu.hidden = false;
-  const menuHeight = elements.targetMenu.offsetHeight;
-  elements.targetMenu.style.left = `${Math.min(rect.right - 4, window.innerWidth - 132)}px`;
-  elements.targetMenu.style.top = `${Math.min(rect.top + 8, window.innerHeight - menuHeight - 8)}px`;
+  positionMenu(elements.targetMenu, event.currentTarget);
   elements.targetMenu.querySelector('[data-action="connect"]').textContent = sessions.has(targetId) ? '移至畫面' : '連接';
 }
 
-function closeTargetMenu() {
+function openProfileMenu(event, profileId) {
+  event.stopPropagation();
+  closeMenus();
+  menuProfileId = profileId;
+  event.currentTarget.closest('.profile-item').classList.add('menu-open');
+  positionMenu(elements.profileMenu, event.currentTarget, 168);
+}
+
+function closeMenus() {
   elements.targetMenu.hidden = true;
+  elements.profileMenu.hidden = true;
   document.querySelector('.target-item.menu-open')?.classList.remove('menu-open');
+  document.querySelector('.profile-item.menu-open')?.classList.remove('menu-open');
   menuTargetId = null;
+  menuProfileId = null;
 }
 
 function openTargetDialog(target = null) {
@@ -177,8 +258,84 @@ function deleteTarget(id) {
   if (!target || !window.confirm(`刪除「${target.name}」？`)) return;
   disconnectTarget(id);
   state.targets = state.targets.filter((item) => item.id !== id);
+  state.profiles = state.profiles
+    .map((profile) => ({ ...profile, targetIds: profile.targetIds.filter((targetId) => targetId !== id) }))
+    .filter((profile) => profile.targetIds.length > 0);
   saveState();
   renderTargets();
+  renderProfiles();
+}
+
+function openProfileDialog(profile = null) {
+  if (!profile && sessions.size === 0) {
+    showToast('請先開啟至少一個監看畫面。');
+    return;
+  }
+  elements.profileForm.reset();
+  document.querySelector('#profile-dialog-title').textContent = profile ? '重新命名組合' : '儲存監看組合';
+  document.querySelector('#profile-id').value = profile?.id ?? '';
+  document.querySelector('#profile-name').value = profile?.name ?? '';
+  const ids = profile?.targetIds ?? [...sessions.keys()];
+  document.querySelector('#profile-summary').textContent = ids.map((id) => targetById(id)?.name).filter(Boolean).join(' · ');
+  elements.profileError.textContent = '';
+  elements.profileDialog.showModal();
+  document.querySelector('#profile-name').focus();
+}
+
+function saveProfile(event) {
+  event.preventDefault();
+  const id = document.querySelector('#profile-id').value;
+  const name = document.querySelector('#profile-name').value.trim();
+  if (!name) {
+    elements.profileError.textContent = '請輸入組合名稱。';
+    return;
+  }
+  if (id) {
+    const profile = profileById(id);
+    if (profile) profile.name = name;
+  } else {
+    if (state.profiles.length >= MAX_PROFILES) {
+      elements.profileError.textContent = `最多可儲存 ${MAX_PROFILES} 個組合。`;
+      return;
+    }
+    state.profiles.push({ id: createId(), name, targetIds: [...sessions.keys()], layout: state.layout });
+  }
+  saveState();
+  renderProfiles();
+  elements.profileDialog.close();
+}
+
+function updateProfile(id) {
+  const profile = profileById(id);
+  if (!profile) return;
+  if (sessions.size === 0) {
+    showToast('目前沒有可儲存的監看畫面。');
+    return;
+  }
+  profile.targetIds = [...sessions.keys()];
+  profile.layout = state.layout;
+  saveState();
+  renderProfiles();
+  showToast(`已更新「${profile.name}」。`);
+}
+
+function deleteProfile(id) {
+  const profile = profileById(id);
+  if (!profile || !window.confirm(`刪除監看組合「${profile.name}」？`)) return;
+  state.profiles = state.profiles.filter((item) => item.id !== id);
+  saveState();
+  renderProfiles();
+}
+
+function applyProfile(id) {
+  const profile = profileById(id);
+  if (!profile) return;
+  disconnectAll();
+  state.layout = profile.layout;
+  for (const targetId of profile.targetIds) connectTarget(targetId, true);
+  saveState();
+  updateMonitorLayout();
+  showToast(`已切換至「${profile.name}」。`);
 }
 
 function connectTarget(id, restoring = false) {
@@ -210,7 +367,7 @@ function connectTarget(id, restoring = false) {
   panel.querySelector('.reconnect').addEventListener('click', () => reconnectTarget(id));
   elements.monitorGrid.append(panel);
 
-  const session = { id, panel, rfb: null, connected: false };
+  const session = { id, panel, rfb: null, connected: false, usedSavedCredentials: Boolean(state.sharedCredentials) };
   sessions.set(id, session);
   state.activeTargetIds = [...sessions.keys()];
   saveState();
@@ -218,7 +375,9 @@ function connectTarget(id, restoring = false) {
   renderTargets();
 
   try {
-    const rfb = new RFB(panel.querySelector('.rfb-screen'), websocketUrl(target), { shared: true });
+    const options = { shared: true };
+    if (state.sharedCredentials) options.credentials = state.sharedCredentials;
+    const rfb = new RFB(panel.querySelector('.rfb-screen'), websocketUrl(target), options);
     session.rfb = rfb;
     rfb.scaleViewport = target.scaleViewport;
     rfb.resizeSession = false;
@@ -233,7 +392,14 @@ function connectTarget(id, restoring = false) {
       setSessionStatus(id, message, false, event.detail.clean ? '' : '無法連接，請檢查位址或重新連線。');
     });
     rfb.addEventListener('credentialsrequired', (event) => requestCredentials(id, event.detail.types));
-    rfb.addEventListener('securityfailure', (event) => setSessionStatus(id, '驗證失敗', false, event.detail.reason || 'VNC 驗證失敗。'));
+    rfb.addEventListener('securityfailure', (event) => {
+      if (session.usedSavedCredentials && state.sharedCredentials) {
+        state.sharedCredentials = null;
+        saveState();
+        showToast('儲存的帳密驗證失敗，已清除。');
+      }
+      setSessionStatus(id, '驗證失敗', false, event.detail.reason || 'VNC 驗證失敗。');
+    });
   } catch (error) {
     console.error(error);
     setSessionStatus(id, '連線失敗', false, '無法建立連線。');
@@ -272,9 +438,9 @@ function setSessionStatus(id, status, connected, message = '') {
 function reconnectTarget(id) {
   const session = sessions.get(id);
   if (!session) return connectTarget(id);
+  sessions.delete(id);
   session.rfb?.disconnect();
   session.panel.remove();
-  sessions.delete(id);
   connectTarget(id);
 }
 
@@ -291,32 +457,66 @@ function disconnectTarget(id) {
 }
 
 function disconnectAll() {
-  [...sessions.keys()].forEach(disconnectTarget);
+  for (const id of [...sessions.keys()]) disconnectTarget(id);
 }
 
 function requestCredentials(id, types = []) {
-  credentialSessionId = id;
-  const target = targetById(id);
+  const session = sessions.get(id);
+  if (!session) return;
+  if (state.sharedCredentials && !session.usedSavedCredentials) {
+    session.usedSavedCredentials = true;
+    session.rfb?.sendCredentials(state.sharedCredentials);
+    return;
+  }
+  if (credentialSessionId === id || credentialQueue.some((item) => item.id === id)) return;
+  credentialQueue.push({ id, types });
+  showNextCredentials();
+}
+
+function showNextCredentials() {
+  if (credentialSessionId !== null) return;
+  let request = credentialQueue.shift();
+  while (request && !sessions.has(request.id)) request = credentialQueue.shift();
+  if (!request) return;
+  credentialSessionId = request.id;
+  const target = targetById(request.id);
   document.querySelector('#credentials-message').textContent = `「${target?.name ?? 'VNC'}」需要認證。`;
   const username = document.querySelector('#credentials-username');
   const password = document.querySelector('#credentials-password');
   username.value = '';
   password.value = '';
-  username.parentElement.hidden = !types.includes('username');
-  password.parentElement.hidden = !types.includes('password');
+  document.querySelector('#remember-credentials').checked = false;
+  username.parentElement.hidden = !request.types.includes('username');
+  password.parentElement.hidden = !request.types.includes('password');
   elements.credentialsDialog.showModal();
-  (types.includes('username') ? username : password).focus();
+  (request.types.includes('username') ? username : password).focus();
 }
 
 function submitCredentials(event) {
   event.preventDefault();
-  const session = sessions.get(credentialSessionId);
-  session?.rfb?.sendCredentials({
+  const credentials = {
     username: document.querySelector('#credentials-username').value,
     password: document.querySelector('#credentials-password').value,
-  });
+  };
+  const session = sessions.get(credentialSessionId);
+  session?.rfb?.sendCredentials(credentials);
+  if (document.querySelector('#remember-credentials').checked) {
+    state.sharedCredentials = credentials;
+    saveState();
+  }
   elements.credentialsDialog.close();
   credentialSessionId = null;
+  if (state.sharedCredentials) {
+    while (credentialQueue.length > 0) {
+      const queued = credentialQueue.shift();
+      const queuedSession = sessions.get(queued.id);
+      if (!queuedSession) continue;
+      queuedSession.usedSavedCredentials = true;
+      queuedSession.rfb?.sendCredentials(state.sharedCredentials);
+    }
+  } else {
+    showNextCredentials();
+  }
 }
 
 function cancelCredentials() {
@@ -324,6 +524,17 @@ function cancelCredentials() {
   elements.credentialsDialog.close();
   credentialSessionId = null;
   if (id) disconnectTarget(id);
+  showNextCredentials();
+}
+
+function forgetCredentials() {
+  if (!state.sharedCredentials) {
+    showToast('目前沒有儲存的帳密。');
+    return;
+  }
+  state.sharedCredentials = null;
+  saveState();
+  showToast('已清除這個瀏覽器儲存的帳密。');
 }
 
 function setLayout(layout) {
@@ -340,6 +551,7 @@ function updateMonitorLayout() {
   document.querySelectorAll('[data-layout]').forEach((button) => {
     button.classList.toggle('active', button.dataset.layout === state.layout);
   });
+  renderProfiles();
 }
 
 function showToast(message) {
@@ -362,26 +574,42 @@ function createId() {
 }
 
 document.querySelector('#add-target').addEventListener('click', () => openTargetDialog());
-document.querySelectorAll('.dialog-close').forEach((button) => button.addEventListener('click', () => elements.targetDialog.close()));
+document.querySelector('#add-profile').addEventListener('click', () => openProfileDialog());
+document.querySelectorAll('.target-dialog-close').forEach((button) => button.addEventListener('click', () => elements.targetDialog.close()));
+document.querySelectorAll('.profile-dialog-close').forEach((button) => button.addEventListener('click', () => elements.profileDialog.close()));
 document.querySelectorAll('.credentials-cancel').forEach((button) => button.addEventListener('click', cancelCredentials));
 document.querySelector('#disconnect-all').addEventListener('click', disconnectAll);
+document.querySelector('#forget-credentials').addEventListener('click', forgetCredentials);
 elements.targetForm.addEventListener('submit', saveTarget);
+elements.profileForm.addEventListener('submit', saveProfile);
 elements.credentialsForm.addEventListener('submit', submitCredentials);
 elements.targetMenu.addEventListener('click', (event) => {
   const action = event.target.dataset.action;
   const id = menuTargetId;
-  closeTargetMenu();
+  closeMenus();
   if (!id) return;
   if (action === 'connect') connectTarget(id);
   if (action === 'edit') openTargetDialog(targetById(id));
   if (action === 'delete') deleteTarget(id);
 });
+elements.profileMenu.addEventListener('click', (event) => {
+  const action = event.target.dataset.action;
+  const id = menuProfileId;
+  closeMenus();
+  if (!id) return;
+  if (action === 'apply') applyProfile(id);
+  if (action === 'update') updateProfile(id);
+  if (action === 'rename') openProfileDialog(profileById(id));
+  if (action === 'delete') deleteProfile(id);
+});
 document.querySelectorAll('[data-layout]').forEach((button) => button.addEventListener('click', () => setLayout(button.dataset.layout)));
 document.addEventListener('click', (event) => {
-  if (!elements.targetMenu.hidden && !elements.targetMenu.contains(event.target) && !event.target.closest('.target-item')) closeTargetMenu();
+  if (!elements.targetMenu.hidden && !elements.targetMenu.contains(event.target) && !event.target.closest('.target-item')) closeMenus();
+  if (!elements.profileMenu.hidden && !elements.profileMenu.contains(event.target) && !event.target.closest('.profile-item')) closeMenus();
 });
-window.addEventListener('resize', closeTargetMenu);
+window.addEventListener('resize', closeMenus);
 
 renderTargets();
+renderProfiles();
 updateMonitorLayout();
 for (const id of state.activeTargetIds) connectTarget(id, true);
